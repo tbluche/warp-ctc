@@ -30,7 +30,7 @@ bool small_test() {
                    "cudaStreamCreate");
 
     float *activations_gpu;
-    throw_on_error(cudaMalloc(&activations_gpu, 
+    throw_on_error(cudaMalloc(&activations_gpu,
                    activations.size() * sizeof(float)),
                    "cudaMalloc");
     throw_on_error(cudaMemcpyAsync(activations_gpu, activations.data(),
@@ -108,7 +108,7 @@ bool inf_test() {
     float *acts_gpu;
     throw_on_error(cudaMalloc(&acts_gpu, acts.size() * sizeof(float)),
                    "cudaMalloc");
-    throw_on_error(cudaMemcpyAsync(acts_gpu, acts.data(), 
+    throw_on_error(cudaMemcpyAsync(acts_gpu, acts.data(),
                                    acts.size() * sizeof(float),
                                    cudaMemcpyHostToDevice, stream),
                    "cudaMemcpyAsync");
@@ -149,7 +149,7 @@ bool inf_test() {
     bool status = std::isinf(cost);
 
     std::vector<float> grads(alphabet_size * T);
-    throw_on_error(cudaMemcpyAsync(grads.data(), grads_gpu, 
+    throw_on_error(cudaMemcpyAsync(grads.data(), grads_gpu,
                                    grads.size() * sizeof(float),
                                    cudaMemcpyDeviceToHost, stream),
                    "cudaMemcpyAsync");
@@ -218,7 +218,7 @@ float grad_check(int T, int alphabet_size,
                    "cudaMalloc");
 
     throw_on_error(compute_ctc_loss(acts_gpu, grads_gpu,
-                                    flat_labels.data(), 
+                                    flat_labels.data(),
                                     label_lengths.data(),
                                     lengths.data(),
                                     alphabet_size,
@@ -229,7 +229,7 @@ float grad_check(int T, int alphabet_size,
                    "Error: compute_ctc_loss (0) in grad_check");
 
     std::vector<float> grads(acts.size());
-    throw_on_error(cudaMemcpyAsync(grads.data(), 
+    throw_on_error(cudaMemcpyAsync(grads.data(),
                                    grads_gpu, grads.size() * sizeof(float),
                                    cudaMemcpyDeviceToHost, stream),
                    "cudaMemcpyAsync");
@@ -240,7 +240,7 @@ float grad_check(int T, int alphabet_size,
     for (int i = 0; i < T * alphabet_size * minibatch; ++i) {
         acts[i] += epsilon;
 
-        throw_on_error(cudaMemcpyAsync(acts_gpu, acts.data(), 
+        throw_on_error(cudaMemcpyAsync(acts_gpu, acts.data(),
                                        acts.size() * sizeof(float),
                                        cudaMemcpyHostToDevice, stream),
                        "cudaMemcpyAsync");
@@ -249,7 +249,7 @@ float grad_check(int T, int alphabet_size,
         std::vector<float> costsP2(minibatch);
 
         throw_on_error(compute_ctc_loss(acts_gpu, NULL,
-                                        flat_labels.data(), 
+                                        flat_labels.data(),
                                         label_lengths.data(),
                                         lengths.data(),
                                         alphabet_size,
@@ -300,7 +300,8 @@ float grad_check(int T, int alphabet_size,
 
 bool run_tests() {
     std::vector<std::tuple<int, int, int, int, float>> problem_sizes =
-        { std::make_tuple(28, 50, 15, 1, 1e-5) };
+        { std::make_tuple(28, 50, 15, 1, 1e-5),
+          std::make_tuple(5, 10, 5, 65, 1e-4) };
 
     bool status = true;
     for (auto problem : problem_sizes) {
