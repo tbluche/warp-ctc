@@ -75,6 +75,8 @@ private:
 
     void softmax(const ProbT* const activations, ProbT* probs,
                  const int* const input_lengths);
+    void log_softmax(const ProbT* const activations, ProbT* probs,
+                 const int* const input_lengths);
 
     std::tuple<ProbT, bool>
             cost_and_grad_kernel(ProbT *grad, const ProbT* const probs,
@@ -179,6 +181,29 @@ CpuCTC<ProbT>::softmax(const ProbT* const activations, ProbT* probs,
 }
 
 template<typename ProbT>
+void
+CpuCTC<ProbT>::log_softmax(const ProbT* const activations, ProbT* probs,
+                           const int* const input_lengths) {
+#pragma omp parallel for
+    for (int mb = 0; mb < minibatch_; ++mb) {
+        for(int c = 0; c < input_lengths[mb]; ++c) {
+            int col_offset = (mb + minibatch_ * c) * alphabet_size_;
+            ProbT max_activation = -std::numeric_limits<ProbT>::infinity();
+            for(int r = 0; r < alphabet_size_; ++r)
+                max_activation = std::max(max_activation, activations[r + col_offset]);
+
+            ProbT denom = ProbT(0.);
+            for(int r = 0; r < alphabet_size_; ++r)
+                denom += std::exp(activations[r + col_offset] - max_activation);
+
+            for(int r = 0; r < alphabet_size_; ++r) {
+                probs[r + col_offset] = activations[r + col_offset] - max_activation - std::log(denom);
+            }
+        }
+    }
+}
+
+template<typename ProbT>
 std::tuple<ProbT, bool>
 CpuCTC<ProbT>::cost_and_grad_kernel(ProbT *grad, const ProbT* const probs,
                                     const int* const labels,
@@ -225,7 +250,7 @@ ProbT CpuCTC<ProbT>::compute_alphas(const ProbT* probs, int repeats, int S, int 
             end = S > 1 ? 2 : 1;
 
     for (int i = start; i < end; ++i) {
-        alphas[i] = std::log(probs[labels[i]]);
+        alphas[i] = probs[labels[i]];
     }
 
     for(int t = 1; t < T; ++t) {
@@ -238,7 +263,7 @@ ProbT CpuCTC<ProbT>::compute_alphas(const ProbT* probs, int repeats, int S, int 
         int idx1 = t * S, idx2 = (t - 1) * S, idx3 = t * (alphabet_size_ * minibatch_);
 
         if (start == 0) {
-            alphas[idx1] = alphas[idx2] + std::log(probs[ctc_helper::BLANK + idx3]);
+            alphas[idx1] = alphas[idx2] + probs[ctc_helper::BLANK + idx3];
             startloop += 1;
         }
 
@@ -249,7 +274,7 @@ ProbT CpuCTC<ProbT>::compute_alphas(const ProbT* probs, int repeats, int S, int 
             if (labels[i] != ctc_helper::BLANK && i != 1 && labels[i] != labels[i-2])
                 prev_sum = ctc_helper::log_plus<ProbT>()(prev_sum, alphas[(i-2) + idx2]);
 
-            alphas[i + idx1] = prev_sum + std::log(probs[labels[i] + idx3]);
+            alphas[i + idx1] = prev_sum + probs[labels[i] + idx3];
         }
     }
 
@@ -282,7 +307,7 @@ ProbT CpuCTC<ProbT>::compute_betas_and_grad(ProbT* grad, const ProbT* const prob
 
     //set the starting values in the beta column at the very right edge
     for (int i = start; i < end; ++i) {
-        betas[i] = std::log(probs[labels[i] + (T - 1) * (alphabet_size_ * minibatch_)]);
+        betas[i] = probs[labels[i] + (T - 1) * (alphabet_size_ * minibatch_)];
 
         //compute alpha * beta in log space at this position in (S, T) space
         alphas[i + (T - 1) * S] += betas[i];
@@ -298,11 +323,11 @@ ProbT CpuCTC<ProbT>::compute_betas_and_grad(ProbT* grad, const ProbT* const prob
         int idx3 = (T - 1) * alphabet_size_ * minibatch_ + i;
 
         if (output[i] == 0.0 || output[i] == ctc_helper::neg_inf<ProbT>() ||
-            probs[idx3] == 0.0) {
-            grad[idx3] = probs[idx3];
+            probs[idx3] == ctc_helper::neg_inf<ProbT>()) {
+            grad[idx3] = std::exp(probs[idx3]);
         } else {
-            grad[idx3] = probs[idx3] - std::exp(output[i] -
-                                                std::log(probs[idx3]) - log_partition);
+            grad[idx3] = std::exp(probs[idx3]) - std::exp(output[i] -
+                                                probs[idx3] - log_partition);
         }
     }
 
@@ -325,7 +350,7 @@ ProbT CpuCTC<ProbT>::compute_betas_and_grad(ProbT* grad, const ProbT* const prob
             if (labels[i] != ctc_helper::BLANK && i != (S-2) && labels[i] != labels[i+2]){
                 next_sum = ctc_helper::log_plus<ProbT>()(next_sum, betas[(i+2)]);
             }
-            betas[i] = next_sum + std::log(probs[labels[i] + idx3]);
+            betas[i] = next_sum + probs[labels[i] + idx3];
 
             //compute alpha * beta in log space
             alphas[i + idx1] += betas[i];
@@ -336,7 +361,7 @@ ProbT CpuCTC<ProbT>::compute_betas_and_grad(ProbT* grad, const ProbT* const prob
         }
 
         if (end == S) {
-            betas[(S-1)] = betas[(S-1)] + std::log(probs[ctc_helper::BLANK + idx3]);
+            betas[(S-1)] = betas[(S-1)] + probs[ctc_helper::BLANK + idx3];
             alphas[(S-1) + idx1] += betas[(S-1)];
 
             output[labels[S-1]] =
@@ -348,11 +373,11 @@ ProbT CpuCTC<ProbT>::compute_betas_and_grad(ProbT* grad, const ProbT* const prob
         for (int i = 0; i < alphabet_size_; ++i) {
 
             if (output[i] == 0.0 || output[i] == ctc_helper::neg_inf<ProbT>() ||
-                probs[idx3] == 0.0) {
-                grad[idx3] = probs[idx3];
+                probs[idx3] == ctc_helper::neg_inf<ProbT>()) {
+                grad[idx3] = std::exp(probs[idx3]);
             } else {
-                grad[idx3] = probs[idx3] - std::exp(output[i] -
-                                                    std::log(probs[idx3]) - log_partition);
+                grad[idx3] = std::exp(probs[idx3]) - std::exp(output[i] -
+                                                    probs[idx3] - log_partition);
             }
             ++idx3;
         }
@@ -407,7 +432,7 @@ CpuCTC<ProbT>::cost_and_grad(const ProbT* const activations,
     //labels w/blanks, e_inc, s_inc
     per_minibatch_bytes += 3 * sizeof(int) * maxS;
 
-    softmax(activations, probs, input_lengths);
+    log_softmax(activations, probs, input_lengths);
 
 #pragma omp parallel for
     for (int mb = 0; mb < minibatch_; ++mb) {
@@ -465,7 +490,7 @@ ctcStatus_t CpuCTC<ProbT>::score_forward(const ProbT* const activations,
     //labels w/blanks, e_inc, s_inc
     per_minibatch_bytes += 3 * sizeof(int) * maxS;
 
-    softmax(activations, probs, input_lengths);
+    log_softmax(activations, probs, input_lengths);
 
 #pragma omp parallel for
     for (int mb = 0; mb < minibatch_; ++mb) {
