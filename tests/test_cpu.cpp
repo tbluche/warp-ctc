@@ -66,61 +66,6 @@ bool small_test() {
     return (score > lb && score < ub);
 }
 
-bool inf_test() {
-    const int alphabet_size = 15;
-    const int T = 50;
-    const int L = 10;
-    const int minibatch = 1;
-
-    std::vector<int> labels = genLabels(alphabet_size, L);
-    labels[0] = 2;
-    std::vector<int> label_lengths = {L};
-
-    std::vector<float> acts = genActs(alphabet_size * T * minibatch);
-
-    for (int i = 0; i < T; ++i)
-        acts[alphabet_size * i + 2] = -1e30;
-
-    std::vector<int> sizes;
-    sizes.push_back(T);
-
-    std::vector<float> grads(alphabet_size * T);
-
-    float cost;
-
-    ctcComputeInfo info;
-    info.loc = CTC_CPU;
-    info.num_threads = 1;
-
-    size_t cpu_alloc_bytes;
-    throw_on_error(get_workspace_size(label_lengths.data(), sizes.data(),
-                                      alphabet_size, sizes.size(), info,
-                                      &cpu_alloc_bytes),
-                   "Error: get_workspace_size in inf_test");
-
-    void* ctc_cpu_workspace = malloc(cpu_alloc_bytes);
-
-    throw_on_error(compute_ctc_loss(acts.data(), grads.data(),
-                                    labels.data(), label_lengths.data(),
-                                    sizes.data(),
-                                    alphabet_size,
-                                    sizes.size(),
-                                    &cost,
-                                    ctc_cpu_workspace,
-                                    info),
-                   "Error: compute_ctc_loss in inf_test");
-
-    free(ctc_cpu_workspace);
-
-    bool status = true;
-    status &= std::isinf(cost);
-
-    for (int i = 0; i < alphabet_size * T; ++i)
-        status &= !std::isnan(grads[i]);
- 
-    return status;
-}
-
 float grad_check(int T, int alphabet_size,
                   std::vector<float>& acts,
                   const std::vector<std::vector<int>>& labels,
@@ -246,7 +191,6 @@ int main(void) {
 
     bool status = true;
     status &= small_test();
-    status &= inf_test();
     status &= run_tests();
 
     if (status)
