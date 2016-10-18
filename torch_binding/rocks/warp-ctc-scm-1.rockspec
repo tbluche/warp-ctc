@@ -2,14 +2,14 @@ package = "warp-ctc"
 version = "scm-1"
 
 source = {
-   url = "git://github.com/baidu-research/warp-ctc.git",
+   url = "git://github.com/iassael/warp-ctc.git",
 }
 
 description = {
    summary = "Baidu CTC Implementation",
    detailed = [[
    ]],
-   homepage = "https://github.com/baidu-research/warp-ctc",
+   homepage = "https://github.com/iassael/warp-ctc",
    license = "Apache"
 }
 
